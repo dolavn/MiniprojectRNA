@@ -20,6 +20,7 @@ vector = np.array
 class Surface(Frame):
 
     BASE_COLOR = "#888"
+    BASE_PAIR_LENGTH = 50
     RADIUS = 20
     ALIGNMENT_RADIUS = 200
     CENTER = np.array([300, 300])
@@ -52,6 +53,16 @@ class Surface(Frame):
         v = v/np.linalg.norm(v)
         return np.arccos(np.dot(v, x))
 
+    @staticmethod
+    def get_base_pair_new_location(p1: vector, p2: vector):
+        dist = np.sqrt(np.dot(
+            p2 - p1, p2 - p1
+        ))
+        target_ratio = Surface.BASE_PAIR_LENGTH/dist
+        alpha = (1/target_ratio)-1
+        beta = alpha+2
+        return (p1*beta+p2*alpha)/(alpha+beta), (p1*alpha+p2*beta)/(alpha+beta)
+
     def get_new_circle(self, angle, first, last, index_list, reverse=False) -> Circle:
         old_center = (
             self.sequence[first]['location'] + self.sequence[last]['location'])/2
@@ -66,21 +77,27 @@ class Surface(Frame):
         last_circle = self.sequence[first]['circle']
         index_list = Surface.get_index_list(first, last, last_circle)
         print(index_list)
+        quantum = self.ANGLES / len(index_list)
         angle = 0
         if last_circle == 0:  # no last circle
             circle = Circle(self.CENTER, self.ALIGNMENT_RADIUS, 0, len(self.sequence))  # first circle
         else:
-            ind1 = first-1 if not reverse else last
-            ind2 = last if not reverse else first-1
+            ind1 = last if reverse else first-1
+            ind2 = first-1 if reverse else last
             angle1 = self.sequence[ind1]['angle']
             angle2 = self.sequence[ind2]['angle']
             angle = np.average([angle1, angle2])
             circle = self.get_new_circle(angle, ind1, ind2, index_list, reverse)
-            loc1 = self.sequence[ind2 if reverse else ind1]['location']
-            angle = (-1 if reverse else 1)*Surface.get_angle_with_x(
-                circle.center, loc1)
+            loc1 = self.sequence[first]['location']
+            loc2 = self.sequence[last]['location']
+            print("prior:" + str(angle))
+            #angle = (-1 if reverse else 1)*(Surface.get_angle_with_x(
+            #    circle.center, (loc1+loc2)/2))
+            angle = angle+np.pi if not reverse else angle
+            angle = angle + quantum/2
+            print(angle)
+            print(index_list[0])
 
-        quantum = self.ANGLES/len(index_list)
         center = circle.center
         radius = circle.radius
         for i in range(len(index_list)):
@@ -100,12 +117,13 @@ class Surface(Frame):
     def set_locations_loop(self, ind1: int, ind2: int) -> None:
         location1 = self.sequence[ind1]['location']
         location2 = self.sequence[ind2]['location']
-        location1_new = (location1*11+location2*9)/20
-        location2_new = (location1*9+location2*11)/20
-        self.sequence[ind1]['location'] = location1_new
-        self.sequence[ind2]['location'] = location2_new
+        location_new = Surface.get_base_pair_new_location(location1, location2)
+        self.sequence[ind1]['location'] = location_new[0]
+        self.sequence[ind2]['location'] = location_new[1]
         self.init_circle(ind2+1, ind1, True)
         self.init_circle(ind1+1, ind2)
+        self.sequence[ind1]['circle'] = self.sequence[ind1+1]['circle']
+        self.sequence[ind2]['circle'] = self.sequence[ind2-1]['circle']
         # print("ind1:" + str(ind1) + "\nind2:" + str(ind2) + "\nlocation_init:" + str(location_init) + "\nlocation_fin:" + str(location_fin))
 
     def init_image(self) -> None:
@@ -117,11 +135,6 @@ class Surface(Frame):
             for other_ind in range(ind+1, len(self.sequence)):
                 if (ind, other_ind) in self.bp_list:
                     self.set_locations_loop(ind, other_ind)
-                    location1 = self.sequence[ind]['location']
-                    location2 = self.sequence[other_ind]['location']
-                    location_avg = (location1+location2)/2
-                    #canvas.create_oval(
-                    #  location_avg[0], location_avg[1], location_avg[0]+self.RADIUS, location_avg[1] + self.RADIUS, fill="#800")
 
         for base in self.sequence:
             location = base['location']
