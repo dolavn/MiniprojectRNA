@@ -1,21 +1,24 @@
 from tkinter import Tk, Canvas, Frame, BOTH
 import numpy as np
-from itertools import chain
+
+vector = np.array
 
 
 class Circle:
 
-    def __init__(self, center, radius, first, last):
+    def __init__(self, center, radius, elem_list):
         self.center = center
         self.radius = radius
-        self.first = first
-        self.last = last
+        self.elem_list = elem_list
+
+    def get_next_ind(self, ind):
+        ind_in_list = self.elem_list.index(ind)
+        return self.elem_list[(ind_in_list+1) % len(self.elem_list)]
 
     def __str__(self):
-        return "Center:" + str(self.center) + "\nRadius:" + str(self.radius) + "\n[" + str(
-            self.first) + "," + str(self.last) + "]"
+        return "Center:" + str(self.center) + "\nRadius:" + str(
+            self.radius) + "\nrange:" + str(self.elem_list)
 
-vector = np.array
 
 class Surface(Frame):
 
@@ -39,11 +42,13 @@ class Surface(Frame):
     def get_index_list(first: int, last: int, last_circle: Circle) -> list:
         if last > first:
             return [i for i in range(first, last)]
-        prev_first = last_circle.first
-        prev_last = last_circle.last
-        print(last_circle)
-        index_list = [i for i in chain(
-            range(first, prev_last), range(prev_first, last))]
+        index_list = []
+        prev_list = last_circle.elem_list
+        last_ind = prev_list.index(last)
+        curr = prev_list.index(first)
+        while curr != last_ind:
+            index_list.append(prev_list[curr])
+            curr = (curr+1) % len(prev_list)
         return index_list
 
     @staticmethod
@@ -71,16 +76,17 @@ class Surface(Frame):
             index_list) / len(self.sequence)
         new_center = old_center + sign*(radius+30)*np.array(
             [np.cos(angle), np.sin(angle)])
-        return Circle(new_center, radius, first, last)
+        return Circle(new_center, radius, index_list)
 
     def init_circle(self, first: int, last: int, reverse: bool=False) -> None:
         last_circle = self.sequence[first]['circle']
         index_list = Surface.get_index_list(first, last, last_circle)
-        print(index_list)
+        if len(index_list) == 0:
+            return
         quantum = self.ANGLES / len(index_list)
         angle = 0
         if last_circle == 0:  # no last circle
-            circle = Circle(self.CENTER, self.ALIGNMENT_RADIUS, 0, len(self.sequence))  # first circle
+            circle = Circle(self.CENTER, self.ALIGNMENT_RADIUS, index_list)  # first circle
         else:
             ind1 = last if reverse else first-1
             ind2 = first-1 if reverse else last
@@ -88,15 +94,8 @@ class Surface(Frame):
             angle2 = self.sequence[ind2]['angle']
             angle = np.average([angle1, angle2])
             circle = self.get_new_circle(angle, ind1, ind2, index_list, reverse)
-            loc1 = self.sequence[first]['location']
-            loc2 = self.sequence[last]['location']
-            print("prior:" + str(angle))
-            #angle = (-1 if reverse else 1)*(Surface.get_angle_with_x(
-            #    circle.center, (loc1+loc2)/2))
             angle = angle+np.pi if not reverse else angle
             angle = angle + quantum/2
-            print(angle)
-            print(index_list[0])
 
         center = circle.center
         radius = circle.radius
@@ -117,13 +116,14 @@ class Surface(Frame):
     def set_locations_loop(self, ind1: int, ind2: int) -> None:
         location1 = self.sequence[ind1]['location']
         location2 = self.sequence[ind2]['location']
+        old_circle = self.sequence[ind1]['circle']
         location_new = Surface.get_base_pair_new_location(location1, location2)
         self.sequence[ind1]['location'] = location_new[0]
         self.sequence[ind2]['location'] = location_new[1]
-        self.init_circle(ind2+1, ind1, True)
-        self.init_circle(ind1+1, ind2)
-        self.sequence[ind1]['circle'] = self.sequence[ind1+1]['circle']
-        self.sequence[ind2]['circle'] = self.sequence[ind2-1]['circle']
+        self.init_circle(old_circle.get_next_ind(ind2), ind1, True)
+        self.init_circle(old_circle.get_next_ind(ind1), ind2)
+        print(self.sequence[old_circle.get_next_ind(ind2)]['circle'])
+        print(self.sequence[old_circle.get_next_ind(ind1)]['circle'])
         # print("ind1:" + str(ind1) + "\nind2:" + str(ind2) + "\nlocation_init:" + str(location_init) + "\nlocation_fin:" + str(location_fin))
 
     def init_image(self) -> None:
@@ -135,21 +135,35 @@ class Surface(Frame):
             for other_ind in range(ind+1, len(self.sequence)):
                 if (ind, other_ind) in self.bp_list:
                     self.set_locations_loop(ind, other_ind)
+                    other_location = self.sequence[other_ind]['location']
+                    location = self.sequence[ind]['location']
+                    canvas.create_line(location[0], location[1], other_location[0], other_location[1])
 
-        for base in self.sequence:
+        for ind in range(len(self.sequence)):
+            base = self.sequence[ind]
             location = base['location']
             center = base['circle'].center
-            canvas.create_oval(center[0], center[1], center[0]+self.RADIUS, center[1] + self.RADIUS, fill="#11A")
-            canvas.create_oval(location[0], location[1], location[0]+self.RADIUS,
-                               location[1]+self.RADIUS, fill=self.BASE_COLOR)
+            #canvas.create_oval(center[0], center[1], center[0]+self.RADIUS, center[1] + self.RADIUS, fill="#11A")
+            #canvas.create_oval(location[0], location[1], location[0]+self.RADIUS,
+            #                   location[1]+self.RADIUS, fill=self.BASE_COLOR)
             canvas.create_text(location[0]+self.RADIUS/2, location[1]-10, text=base['ind'])
+            if ind < len(self.sequence)-1:
+                next_base = self.sequence[ind+1]
+                location_next = next_base['location']
+                canvas.create_line(location[0], location[1], location_next[0], location_next[1])
+
         canvas.pack(fill=BOTH, expand=1)
 
 root = Tk()
-surf = Surface("UAUUAACAAGAAAUAA")
-surf.add_bp(2, 12)
-#surf.add_bp(3, 11)
-#surf.add_bp(1, 3)
+surf = Surface("AGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGU")
+
+surf.add_bp(0, 44)
+surf.add_bp(1, 43)
+surf.add_bp(2, 42)
+surf.add_bp(12, 38)
+surf.add_bp(19, 31)
+surf.add_bp(20, 30)
+#surf.add_bp(17, 25)
 #surf.add_bp(6, 9)
 surf.init_image()
 root.geometry("600x600")
