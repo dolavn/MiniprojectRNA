@@ -23,8 +23,8 @@ class Linkage:
                 Linkage.dfs_visit(next_node, nodes_list)
 
     @staticmethod
-    def run_dfs(first_node: 'Linkage'):
-        nodes_list = []
+    def run_dfs(first_node: 'Linkage', ignore_node: 'Linkage'):
+        nodes_list = [ignore_node]
         Linkage.dfs_visit(first_node, nodes_list)
 
 class BasePair(Linkage):
@@ -278,11 +278,11 @@ class Surface(Frame):
                     other_location = self.sequence[bp.ind2]['location']
                     location = self.sequence[ind]['location']
                     canvas.create_line(location[0], location[1], other_location[0], other_location[1])
-        bpp = self.get_base_pair(23, 19)
+        bpp = self.get_base_pair(32, 38)
         for link in bpp.links:
             print("l" + str(link))
         circ = self.sequence[20]['link']
-        Linkage.run_dfs(circ)
+        #Linkage.run_dfs(circ)
         """
         last = EMPTY_CIRCLE
         curr = self.sequence[16]['link']
