@@ -13,6 +13,7 @@ def create_rotation_matrix(angle: float) -> matrix:
     mat = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
     return mat
 
+
 def create_rotation_matrix_point(point: vector, angle: float) -> matrix:
     zero_vector = [0, 0, 0]
     pos_translate_vec = [point[0], point[1], 1]
@@ -31,9 +32,9 @@ def create_rotation_matrix_point(point: vector, angle: float) -> matrix:
 def rotate_around_point(point: vector, center: vector, angle: float) -> vector:
     rotation_matrix = create_rotation_matrix_point(center, angle)
     vec_3 = np.array([point[0], point[1], 1])
-    print(rotation_matrix)
+   # print(rotation_matrix)
     ans_3 = rotation_matrix.dot(vec_3)
-    print(ans_3)
+    #print(ans_3)
     ans = np.array([ans_3[0], ans_3[1]])
     return ans
 
