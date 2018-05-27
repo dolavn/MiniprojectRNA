@@ -1,3 +1,6 @@
+from collections import deque
+from subprocess import run, PIPE
+
 class DPMatrix:
     def __init__(self, sequence):
         self.sequence = sequence
@@ -9,21 +12,21 @@ class DPMatrix:
             for i in range(self.seq_len-1):
                 j += 1
                 if j < self.seq_len:
-                    print('i = ', i)
-                    print('j = ', j)
+                    # print('i = ', i)
+                    # print('j = ', j)
                     val1 = 0
                     if self.base_pair(i, j):
-                        val1 = self.dp_table[i+1][j-1] + 1
-                    print('val1: ', val1)
+                        val1 = self.dp_table[i+1][j-1] + 1*(0.5 if abs(i-j) == 1 else 1)
+                    # print('val1: ', val1)
                     val2 = 0
                     for k in range(i, j):
                         temp_val = self.dp_table[i][k] + self.dp_table[k + 1][j]
                         if temp_val > val2:
                             val2 = temp_val
-                    print('val2: ', val2)
+                    # print('val2: ', val2)
                     max_val = max(val1, val2)
                     self.dp_table[i][j] = max_val
-        print(self.dp_table)
+        #print(self.dp_table)
         return self.dp_table[0][self.seq_len-1]
 
     def get_matrix(self):
@@ -62,11 +65,33 @@ class DPMatrix:
         return pairs
 
 
-
 #seq = "AGCUAU"
-seq = "GGGAAAUCC"
+seq2 = "GGGAAAUCC"
+seq = "GGCAGUACCAAGUCGCGAAAGCGAUGGCCUUGCAAAGGGUAUGGUAAUAAGCUGCC"
 matrix = DPMatrix(seq)
 ans = matrix.rna_folding()
 print(ans)
 rna = matrix.get_rna_structure()
-print(rna)
+brackets_open = deque(sorted([bp[0] for bp in rna]))
+brackets_close = deque(sorted([bp[1] for bp in rna]))
+structure = ""
+queues = [(brackets_open, '('), (brackets_close, ')')]
+for i in range(len(seq)):
+    queues = [queue_pair for queue_pair in queues if len(queue_pair[0]) > 0]
+    if len(queues) == 0:
+        break
+    found = False
+    sp = ''
+    for queue_pair in queues:
+        if queue_pair[0][0] == i:
+            queue_pair[0].popleft()
+            structure = structure + queue_pair[1] + sp
+            found = True
+            break
+    if not found:
+        structure = structure + '.' + sp
+
+lines = [">seq", seq, structure]
+plot_input = '\n'.join(lines)
+
+p = run(["RNAplot", "-o", "svg"], stdout=PIPE, input=plot_input, encoding='ASCII')

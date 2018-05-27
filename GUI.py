@@ -1,6 +1,5 @@
 from tkinter import Tk, Canvas, Frame, BOTH
-from typing import List
-from typing import Tuple
+from typing import List, Callable, Tuple
 import numpy as np
 import itertools
 import abc
@@ -15,28 +14,21 @@ def create_rotation_matrix(angle: float) -> matrix:
 
 
 def create_rotation_matrix_point(point: vector, angle: float) -> matrix:
-    zero_vector = [0, 0, 0]
-    pos_translate_vec = [point[0], point[1], 1]
-    neg_translate_vec = [-point[0], -point[1], 1]
-    pos_translate_mat = np.array([zero_vector, zero_vector, pos_translate_vec])
-    neg_translate_mat = np.array([zero_vector, zero_vector, neg_translate_vec])
+    pos_translate_mat = np.array([[1, 0, point[0]], [0, 1, point[1]], [0, 0, 1]])
+    neg_translate_mat = np.array([[1, 0, -point[0]], [0, 1, -point[1]], [0, 0, 1]])
     rotate_mat = create_rotation_matrix(angle)
-    # ans_mat = rotate_mat.dot(neg_translate_mat)
-    ans_mat = np.matmul(rotate_mat, pos_translate_mat)
-    ans_mat = np.matmul(ans_mat, neg_translate_mat)
-    ans_mat = neg_translate_mat.dot(rotate_mat).dot(pos_translate_mat)
-    print(ans_mat)
+    ans_mat = np.dot(pos_translate_mat, rotate_mat)
+    ans_mat = np.dot(ans_mat, neg_translate_mat)
     return ans_mat
 
 
 def rotate_around_point(point: vector, center: vector, angle: float) -> vector:
     rotation_matrix = create_rotation_matrix_point(center, angle)
     vec_3 = np.array([point[0], point[1], 1])
-   # print(rotation_matrix)
-    ans_3 = rotation_matrix.dot(vec_3)
-    #print(ans_3)
+    ans_3 = np.dot(rotation_matrix, vec_3)
     ans = np.array([ans_3[0], ans_3[1]])
     return ans
+
 
 class Linkage:
     __metaclass__ = abc.ABCMeta
@@ -55,25 +47,19 @@ class Linkage:
 
     @staticmethod
     def dfs_visit(first_node: 'Linkage', curr_node: 'Linkage', nodes_list: List['Linkage'],
-                  change_vector: vector, surface: 'Surface', rotate: bool) -> None:
+                  callback: Callable):
         if curr_node not in nodes_list:
             nodes_list.append(curr_node)
-            print("Visiting " + str(curr_node))
-            print("change " + str(change_vector))
             if curr_node is not first_node:
-                curr_node.move(surface, change_vector)
-            if rotate:
-                print("rotating")
+                callback(curr_node)
             next_nodes = curr_node.next()
             for next_node in next_nodes:
-                next_rotate = rotate and isinstance(next_node, BasePair)
-                Linkage.dfs_visit(first_node, next_node, nodes_list, change_vector, surface, next_rotate)
+                Linkage.dfs_visit(first_node, next_node, nodes_list, callback)
 
     @staticmethod
-    def run_dfs(first_node: 'Linkage', ignore_node: 'Linkage', change_vector: vector, surface: 'Surface'):
+    def run_dfs(first_node: 'Linkage', ignore_node: 'Linkage', callback: Callable) -> None:
         nodes_list = [ignore_node]
-        print("running dfs")
-        Linkage.dfs_visit(first_node, first_node, nodes_list, change_vector, surface, True)
+        Linkage.dfs_visit(first_node, first_node, nodes_list, callback)
 
 
 class BasePair(Linkage):
@@ -106,7 +92,10 @@ class BasePair(Linkage):
         raise Exception("Couldn't replace")
 
     def rotate(self, surface: 'Surface', center: vector, angle: float) -> None:
-        pass
+        for ind in [self.ind1, self.ind2]:
+            loc = surface.sequence[ind]['location']
+            loc = rotate_around_point(loc, center, angle)
+            surface.sequence[ind]['location'] = loc
 
     def move(self, surface: 'Surface', change_vector: vector) -> None:
         for ind in [self.ind1, self.ind2]:
@@ -115,7 +104,7 @@ class BasePair(Linkage):
             surface.sequence[ind]['location'] = loc
 
     def next(self) -> List[Linkage]:
-        ans = list(self.links)
+        ans = [link for link in self.links if link is not None]
         return ans
 
     def __str__(self):
@@ -137,14 +126,17 @@ class Circle(Linkage):
         self.bp_list = []
 
     def rotate(self, surface: 'Surface', center: vector, angle: float) -> None:
-        pass
+        for ind in self.elem_list:
+            loc = surface.sequence[ind]['location']
+            loc = rotate_around_point(loc, center, angle)
+            surface.sequence[ind]['location'] = loc
+        self.center = rotate_around_point(self.center, center, angle)
 
     def move(self, surface: 'Surface', change_vector: vector) -> None:
         for ind in self.elem_list:
             loc = surface.sequence[ind]['location']
             loc = loc + change_vector
             surface.sequence[ind]['location'] = loc
-        print("move circle " + str(self))
         self.center = self.center + change_vector
 
     def next(self) -> List[Linkage]:
@@ -166,11 +158,22 @@ class Circle(Linkage):
                 return i
         raise LookupError("Element not in circle")
 
+    def get_angle_in_circle(self, elem: int) -> float:
+        ind = self.get_ind_in_circle(elem)
+        quantum = 2*np.pi/len(self.elem_list)
+        return self.init_angle+quantum*ind
+
     def get_next_bases(self, bp: BasePair) -> Tuple[int, int]:
         for pair in self.bp_list:
             if pair[0] == bp:
                 return pair[1]
         raise Exception("Base pair not found")
+
+    def get_base_pair(self, ind: int) -> BasePair:
+        for pair in self.bp_list:
+            if ind in pair[1]:
+                return pair[0]
+        raise Exception("Index not found")
 
     def add_bp(self, bp: BasePair, next_bases: Tuple[int, int]) -> None:
         self.bp_list.append((bp, next_bases))
@@ -197,9 +200,8 @@ class Circle(Linkage):
         return self.elem_list[(ind_in_list-1) % len(self.elem_list)]
 
     def __str__(self) -> str:
-        #return "Center:" + str(self.center) + "\nRadius:" + str(
-        #   self.radius) + "\nrange:" + str(self.elem_list)
         return "circle:" + str(self.elem_list)
+
 
 EMPTY_CIRCLE = Circle(np.array([0, 0]), 0, [])
 
@@ -314,14 +316,20 @@ class Surface(Frame):
         link1 = circle1
         link2 = circle2
         if circle1 is EMPTY_CIRCLE:
-            link1 = self.get_base_pair(bp.ind2+1, bp.ind1-1)
-            link1.set_next_base_pair(bp)
+            try:
+                link1 = self.get_base_pair(bp.ind2+1, bp.ind1-1)
+                link1.set_next_base_pair(bp)
+            except Exception:
+                link1 = None
         else:
             pair = (old_circle.get_next_ind(bp.ind2), old_circle.get_prev_ind(bp.ind1))
             circle1.add_bp(bp, pair)
         if circle2 is EMPTY_CIRCLE:
-            link2 = self.get_base_pair(bp.ind2 + 1, bp.ind1 - 1)
-            link2.set_next_base_pair(bp)
+            try:
+                link2 = self.get_base_pair(bp.ind2 + 1, bp.ind1 - 1)
+                link2.set_next_base_pair(bp)
+            except Exception:
+                link2 = None
         else:
             pair = (old_circle.get_next_ind(bp.ind1), old_circle.get_prev_ind(bp.ind2))
             circle2.add_bp(bp, pair)
@@ -343,13 +351,18 @@ class Surface(Frame):
         angle = init_angle+quantum*ind
         return center + dist*np.array([np.cos(angle), np.sin(angle)])
 
-    @staticmethod
-    def get_change_vector(new_circle: Circle, old_circle: Circle, ind: int) -> vector:
-        orig_location = Surface.get_base_pair_location(old_circle, ind)
+    def get_change_vector(self, new_circle: Circle, ind: int) -> vector:
+        bp = new_circle.get_base_pair(ind)
+        loc_avg = (self.sequence[bp.ind1]['location']+self.sequence[bp.ind2]['location'])/2
+        orig_location = loc_avg
         new_location = Surface.get_base_pair_location(new_circle, ind)
-        print(orig_location)
-        print(new_location)
         return np.array(new_location - orig_location)
+
+    @staticmethod
+    def get_change_angle(new_circle: Circle, old_circle: Circle, ind: int) -> float:
+        old_angle = old_circle.get_angle_in_circle(ind)
+        new_angle = new_circle.get_angle_in_circle(ind)
+        return new_angle-old_angle
 
     def create_pair(self, bp: BasePair) -> None:
         location1 = self.sequence[bp.ind1]['location']
@@ -371,8 +384,10 @@ class Surface(Frame):
                 if pair[1].in_circle(pair[0]):
                     index = pair[0]
                     circle = pair[1]
-                    change_vector = self.get_change_vector(circle, old_circle, index)
-                    Linkage.run_dfs(circle, bp, change_vector, self)
+                    angle = self.get_change_angle(circle, old_circle, index)
+                    Linkage.run_dfs(circle, bp, lambda curr_link: curr_link.rotate(self, circle.center, angle))
+                    change_vector = self.get_change_vector(circle, index)
+                    Linkage.run_dfs(circle, bp, lambda curr_link: curr_link.move(self, change_vector))
                     break
 
     def init_image(self) -> None:
@@ -390,7 +405,7 @@ class Surface(Frame):
         for ind in range(len(self.sequence)):
             base = self.sequence[ind]
             location = base['location']
-            canvas.create_text(location[0]+self.RADIUS/2, location[1]-10, text=base['ind'])
+            canvas.create_text(location[0]+self.RADIUS/2, location[1]-10, text=base['base'])
             if ind < len(self.sequence)-1:
                 next_base = self.sequence[ind+1]
                 location_next = next_base['location']
@@ -403,31 +418,20 @@ surf = Surface("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
 
 
 surf.add_bp(2, 10)
-
-
-surf.add_bp(15, 41)
-"""
-surf.add_bp(30, 40)
-surf.add_bp(31, 39)
-surf.add_bp(32, 38)
-surf.add_bp(33, 37)
-surf.add_bp(34, 36)
-
-"""
+surf.add_bp(3, 9)
+surf.add_bp(4, 8)
+surf.add_bp(5, 7)
+surf.add_bp(15, 36)
+#surf.add_bp(15, 41)
 surf.add_bp(18, 24)
-#surf.add_bp(19, 23)
+surf.add_bp(19, 23)
 
-#surf.add_bp(7, 10)
-#surf.add_bp(17, 25)
-#surf.add_bp(6, 9)
-
-surf.add_bp(44, 51)
 
 #surf.init_image()
 #root.geometry("600x600")
 #root.mainloop()
 
-p1 = np.array([1,0])
-p2 = np.array([2,0])
-p = rotate_around_point(p2, p1, np.pi/2)
-print(p)
+# p1 = np.array([5, 0])
+# p2 = np.array([10, 0])
+# p = rotate_around_point(p2, p1, np.pi/6)
+# print(p)
